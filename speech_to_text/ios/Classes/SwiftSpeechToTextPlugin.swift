@@ -673,9 +673,6 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
     }
     
     private func invokeFlutter( _ method: SwiftSpeechToTextCallbackMethods, arguments: Any? ) {
-        if method != SwiftSpeechToTextCallbackMethods.soundLevelChange || method != SwiftSpeechToTextCallbackMethods.soundChunk {
-            os_log("invokeFlutter %{PUBLIC}@", log: pluginLog, type: .debug, method.rawValue )
-        }
         DispatchQueue.main.async {
             self.channel.invokeMethod( method.rawValue, arguments: arguments )
         }
