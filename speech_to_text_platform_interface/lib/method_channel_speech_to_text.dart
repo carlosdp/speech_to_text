@@ -14,6 +14,7 @@ class MethodChannelSpeechToText extends SpeechToTextPlatform {
   static const String notifyErrorMethod = 'notifyError';
   static const String notifyStatusMethod = 'notifyStatus';
   static const String soundLevelChangeMethod = "soundLevelChange";
+  static const String soundChunkMethod = "soundChunk";
 
   /// Returns true if the user has already granted permission to access the
   /// microphone, does not prompt the user.
@@ -111,6 +112,8 @@ class MethodChannelSpeechToText extends SpeechToTextPlatform {
       "sampleRate": options?.sampleRate ?? sampleRate,
       "enableHaptics": options?.enableHapticFeedback ?? false,
       "autoPunctuation": options?.autoPunctuation ?? false,
+      "setupAudioSession": options?.setupAudioSession ?? true,
+      "echoCancel": options?.echoCancel ?? false,
     };
     if (null != localeId) {
       listenParams["localeId"] = localeId;
@@ -146,6 +149,11 @@ class MethodChannelSpeechToText extends SpeechToTextPlatform {
       case soundLevelChangeMethod:
         if (call.arguments is double && null != onSoundLevel) {
           onSoundLevel!(call.arguments);
+        }
+        break;
+      case soundChunkMethod:
+        if (call.arguments is Uint8List && null != onSoundChunk) {
+          onSoundChunk!(call.arguments);
         }
         break;
       default:

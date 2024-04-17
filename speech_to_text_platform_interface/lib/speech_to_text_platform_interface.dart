@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
@@ -63,39 +64,49 @@ class SpeechListenOptions {
   final sampleRate;
   final autoPunctuation;
   final enableHapticFeedback;
+  final setupAudioSession;
+  final echoCancel;
 
-  SpeechListenOptions(
-      {
-      /// If true the listen session will automatically be canceled on a permanent error.
-      this.cancelOnError = false,
+  SpeechListenOptions({
+    /// If true the listen session will automatically be canceled on a permanent error.
+    this.cancelOnError = false,
 
-      /// If true the listen session will report partial results as they
-      /// are recognized. When false only the final results will be reported.
-      this.partialResults = true,
+    /// If true the listen session will report partial results as they
+    /// are recognized. When false only the final results will be reported.
+    this.partialResults = true,
 
-      /// If true the listen session will only use on device recognition. If
-      /// it cannot do this the listen attempt will fail. This is usually only
-      /// needed for sensitive content where privacy or security is a concern.
-      /// If false the listen session will use both on device and network
-      /// recognition.
-      this.onDevice = false,
+    /// If true the listen session will only use on device recognition. If
+    /// it cannot do this the listen attempt will fail. This is usually only
+    /// needed for sensitive content where privacy or security is a concern.
+    /// If false the listen session will use both on device and network
+    /// recognition.
+    this.onDevice = false,
 
-      /// The listen mode to use, currently only supported on iOS.
-      this.listenMode = ListenMode.confirmation,
+    /// The listen mode to use, currently only supported on iOS.
+    this.listenMode = ListenMode.confirmation,
 
-      /// The sample rate to use, currently only needed on iOS for some use
-      /// cases. Occasionally some devices crash with `sampleRate != device's
-      /// supported sampleRate`, try 44100 if seeing crashes.
-      this.sampleRate = 0,
+    /// The sample rate to use, currently only needed on iOS for some use
+    /// cases. Occasionally some devices crash with `sampleRate != device's
+    /// supported sampleRate`, try 44100 if seeing crashes.
+    this.sampleRate = 0,
 
-      /// If true the listen session will automatically add punctuation to
-      /// the recognized text. This is only supported on iOS.
-      this.autoPunctuation = false,
+    /// If true the listen session will automatically add punctuation to
+    /// the recognized text. This is only supported on iOS.
+    this.autoPunctuation = false,
 
-      /// If true haptic feedback will be enabled during the listen session.
-      /// Usually haptics are suppressed during speech recognition to avoid
-      /// interference with the microphone. Currently only supported on iOS.
-      this.enableHapticFeedback = false});
+    /// If true haptic feedback will be enabled during the listen session.
+    /// Usually haptics are suppressed during speech recognition to avoid
+    /// interference with the microphone. Currently only supported on iOS.
+    this.enableHapticFeedback = false,
+
+    /// If set to false, the listen session will not setup its own iOS audio session,
+    /// allowing you to control this manually with a package like `audio_session`.
+    this.setupAudioSession = true,
+
+    /// If set to true, the listen session will be setup with echo cancellation enabled
+    /// This is only supported on iOS, at the moment.
+    this.echoCancel = false,
+  });
 }
 
 /// The interface that implementations of url_launcher must implement.
@@ -129,6 +140,7 @@ abstract class SpeechToTextPlatform extends PlatformInterface {
   void Function(String error)? onError;
   void Function(String status)? onStatus;
   void Function(double level)? onSoundLevel;
+  void Function(Uint8List)? onSoundChunk;
 
   /// Returns true if the user has already granted permission to access the
   /// microphone, does not prompt the user.

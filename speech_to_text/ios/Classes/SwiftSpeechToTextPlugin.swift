@@ -19,6 +19,7 @@ public enum SwiftSpeechToTextCallbackMethods: String {
     case notifyStatus
     case notifyError
     case soundLevelChange
+    case soundChunk
 }
 
 public enum SpeechToTextStatus: String {
@@ -76,6 +77,7 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
     private var cancelSound: AVAudioPlayer?
     private var rememberedAudioCategory: AVAudioSession.Category?
     private var rememberedAudioCategoryOptions: AVAudioSession.CategoryOptions?
+    private var shouldSetupAudioSession: Bool = true
     private var previousLocale: Locale?
     private var onPlayEnd: (() -> Void)?
     private var returnPartialResults: Bool = true
@@ -116,11 +118,13 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
                     let listenModeIndex = argsArr["listenMode"] as? Int,
                     let sampleRate = argsArr["sampleRate"] as? Int,
                     let autoPunctuation = argsArr["autoPunctuation"] as? Bool,
-                    let enableHaptics = argsArr["enableHaptics"] as? Bool
+                    let enableHaptics = argsArr["enableHaptics"] as? Bool,
+                    let setupAudioSession = argsArr["setupAudioSession"] as? Bool,
+                    let echoCancel = argsArr["echoCancel"] as? Bool
                 else {
                     DispatchQueue.main.async {
                         result(FlutterError( code: SpeechToTextErrors.missingOrInvalidArg.rawValue,
-                                             message:"Missing arg partialResults, onDevice, listenMode, autoPunctuatio, enableHaptics and sampleRate are required",
+                                             message:"Missing arg partialResults, onDevice, listenMode, autoPunctuation, enableHaptics, sampleRate, setupAudioSession, and echoCancel are required",
                                              details: nil ))
                     }
                     return
@@ -138,7 +142,7 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
                 return
             }
             
-            listenForSpeech( result, localeStr: localeStr, partialResults: partialResults, onDevice: onDevice, listenMode: listenMode, sampleRate: sampleRate, autoPunctuation: autoPunctuation, enableHaptics: enableHaptics )
+            listenForSpeech( result, localeStr: localeStr, partialResults: partialResults, onDevice: onDevice, listenMode: listenMode, sampleRate: sampleRate, autoPunctuation: autoPunctuation, enableHaptics: enableHaptics, setupAudioSession: setupAudioSession, echoCancel: echoCancel )
         case SwiftSpeechToTextMethods.stop.rawValue:
             stopSpeech( result )
         case SwiftSpeechToTextMethods.cancel.rawValue:
@@ -330,19 +334,21 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
         catch {
             os_log("Error removing trap: %{PUBLIC}@", log: pluginLog, type: .error, error.localizedDescription)
         }
-        do {
-            if let rememberedAudioCategory = rememberedAudioCategory, let rememberedAudioCategoryOptions = rememberedAudioCategoryOptions {
-                try self.audioSession.setCategory(rememberedAudioCategory,options: rememberedAudioCategoryOptions)
+        if shouldSetupAudioSession {
+            do {
+                if let rememberedAudioCategory = rememberedAudioCategory, let rememberedAudioCategoryOptions = rememberedAudioCategoryOptions {
+                    try self.audioSession.setCategory(rememberedAudioCategory,options: rememberedAudioCategoryOptions)
+                }
             }
-        }
-        catch {
-            os_log("Error stopping listen: %{PUBLIC}@", log: pluginLog, type: .error, error.localizedDescription)
-        }
-        do {
-            try self.audioSession.setActive(false, options: .notifyOthersOnDeactivation)
-        }
-        catch {
-            os_log("Error deactivation: %{PUBLIC}@", log: pluginLog, type: .info, error.localizedDescription)
+            catch {
+                os_log("Error stopping listen: %{PUBLIC}@", log: pluginLog, type: .error, error.localizedDescription)
+            }
+            do {
+                try self.audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+            }
+            catch {
+                os_log("Error deactivation: %{PUBLIC}@", log: pluginLog, type: .info, error.localizedDescription)
+            }
         }
         self.invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: SpeechToTextStatus.done.rawValue )
 
@@ -354,7 +360,7 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
     }
     
     private func listenForSpeech( _ result: @escaping FlutterResult, localeStr: String?, partialResults: Bool, 
-                                  onDevice: Bool, listenMode: ListenMode, sampleRate: Int, autoPunctuation: Bool, enableHaptics: Bool ) {
+                                  onDevice: Bool, listenMode: ListenMode, sampleRate: Int, autoPunctuation: Bool, enableHaptics: Bool, setupAudioSession: Bool, echoCancel: Bool ) {
         if ( nil != currentTask || listening ) {
             sendBoolResult( false, result );
             return
@@ -380,16 +386,21 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
             }
             rememberedAudioCategory = self.audioSession.category
             rememberedAudioCategoryOptions = self.audioSession.categoryOptions
-            try self.audioSession.setCategory(AVAudioSession.Category.playAndRecord, options: [.defaultToSpeaker,.allowBluetooth,.allowBluetoothA2DP,.mixWithOthers])
-            //            try self.audioSession.setMode(AVAudioSession.Mode.measurement)
-            if ( sampleRate > 0 ) {
-                try self.audioSession.setPreferredSampleRate(Double(sampleRate))
+            shouldSetupAudioSession = setupAudioSession
+
+            if (setupAudioSession) {
+                try self.audioSession.setCategory(AVAudioSession.Category.playAndRecord, options: [.defaultToSpeaker,.allowBluetooth,.allowBluetoothA2DP,.mixWithOthers])
+                //            try self.audioSession.setMode(AVAudioSession.Mode.measurement)
+                if ( sampleRate > 0 ) {
+                    try self.audioSession.setPreferredSampleRate(Double(sampleRate))
+                }
+                try self.audioSession.setMode(AVAudioSession.Mode.default)
+                try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                if #available(iOS 13.0, *) {
+                    try self.audioSession.setAllowHapticsAndSystemSoundsDuringRecording(enableHaptics)
+                }
             }
-            try self.audioSession.setMode(AVAudioSession.Mode.default)
-            try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            if #available(iOS 13.0, *) {
-                try self.audioSession.setAllowHapticsAndSystemSoundsDuringRecording(enableHaptics)
-            }
+
             if let sound = listeningSound {
                 self.onPlayEnd = {()->Void in
                     if ( !self.failedListen ) {
@@ -429,6 +440,56 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
             if #available(iOS 16.0, *) {
                 currentRequest.addsPunctuation = autoPunctuation
             }
+
+            let dstFormat = AVAudioFormat(
+                commonFormat: .pcmFormatInt16,
+                sampleRate: Double(sampleRate),
+                channels: AVAudioChannelCount(1),
+                interleaved: true
+            )
+
+            if #available(iOS 13, *), echoCancel {
+                do {
+                    try self.inputNode?.setVoiceProcessingEnabled(true)
+                } catch {
+                    os_log("Error enabling voice processing for echo cancellation: %{PUBLIC}@", log: pluginLog, type: .error, error.localizedDescription)
+                }
+
+                // No-op render callback, needed otherwise iOS starts throwing the following error
+                // (as a warning log) in loop:
+                // throwing -1 from AU auou/vpio/appl, render err: -1
+                let renderCallback: AURenderCallback = { 
+                    (inRefCon,
+                    ioActionFlags,
+                    inTimeStamp,
+                    inBusNumber,
+                    inNumberFrames,
+                    ioData) -> OSStatus in
+                    // This is where you would normally process the audio data.
+                    // Since we're not doing anything, we just return noErr (no error).
+                    return noErr
+                }
+
+                var callbackStruct = AURenderCallbackStruct(inputProc: renderCallback, inputProcRefCon: nil)
+
+                if let audioUnit = inputNode?.audioUnit {
+                    let result = AudioUnitSetProperty(
+                    audioUnit,
+                    kAudioUnitProperty_SetRenderCallback,
+                    kAudioUnitScope_Input,
+                    0,
+                    &callbackStruct,
+                    UInt32(MemoryLayout<AURenderCallbackStruct>.size)
+                    )
+                    // Handle the result if needed
+                    if result != noErr {
+                        os_log("Error setting render callback: %{PUBLIC}@", log: pluginLog, type: .error, result)
+                    }
+                } else {
+                    os_log("Error getting audio unit to install render callback", log: pluginLog, type: .error)
+                }
+            }
+
             self.currentTask = self.recognizer?.recognitionTask(with: currentRequest, delegate: self )
             let recordingFormat = inputNode?.outputFormat(forBus: self.busForNodeTap)
             let theSampleRate = audioSession.sampleRate
@@ -437,8 +498,10 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
                 self.inputNode?.installTap(onBus: self.busForNodeTap, bufferSize: self.speechBufferSize, format: fmt) { (buffer: AVAudioPCMBuffer, when: AVAudioTime) in
                     currentRequest.append(buffer)
                     self.updateSoundLevel( buffer: buffer )
+                    self.streamSoundChunk( buffer: buffer, dstFormat: dstFormat!, converter: AVAudioConverter(from: fmt!, to: dstFormat!)! )
                 }
             }
+
         //    if ( inErrorTest ){
         //        throw SpeechToTextError.runtimeError("for testing only")
         //    }
@@ -483,6 +546,63 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
         let rms = sqrt(channelDataValueArray.map{ $0 * $0 }.reduce(0, +) / frameLength )
         let avgPower = 20 * log10(rms)
         self.invokeFlutter( SwiftSpeechToTextCallbackMethods.soundLevelChange, arguments: avgPower )
+    }
+
+    // Little endian
+    private func convertInt16toUInt8(_ samples: [Int16]) -> [UInt8] {
+        var bytes: [UInt8] = []
+        
+        for sample in samples {
+            bytes.append(UInt8(sample & 0x00ff))
+            bytes.append(UInt8(sample >> 8 & 0x00ff))
+        }
+        
+        return bytes
+    }
+
+    private func streamSoundChunk(
+        buffer: AVAudioPCMBuffer,
+        dstFormat: AVAudioFormat,
+        converter: AVAudioConverter
+    ) -> Void {
+        let inputCallback: AVAudioConverterInputBlock = { inNumPackets, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        
+        // Determine frame capacity
+        let capacity = (UInt32(dstFormat.sampleRate) * dstFormat.channelCount * buffer.frameLength) / (UInt32(buffer.format.sampleRate) * buffer.format.channelCount)
+        
+        // Destination buffer
+        guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: dstFormat, frameCapacity: capacity) else {
+            print("Unable to create output buffer")
+            return
+        }
+        
+        // Convert input buffer (resample, num channels)
+        var error: NSError? = nil
+        converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputCallback)
+        if let error = error {
+            print(error.localizedDescription)
+            return
+        }
+        
+        if let channelData = convertedBuffer.int16ChannelData {
+            // Fill samples
+            let channelDataPointer = channelData.pointee
+            let samples = stride(from: 0,
+                                to: Int(convertedBuffer.frameLength),
+                                by: buffer.stride).map{ channelDataPointer[$0] }
+            //        let arraySize = Int(buffer.frameLength)
+            //        let samples = Array(UnsafeBufferPointer(start: channelData.pointee, count: arraySize))
+            
+            // Send bytes
+            let bytes = Data(_: convertInt16toUInt8(samples))
+            
+            DispatchQueue.main.async {
+                self.invokeFlutter( SwiftSpeechToTextCallbackMethods.soundChunk, arguments: FlutterStandardTypedData(bytes: bytes) )
+            }
+        }
     }
     
     /// Build a list of localId:name with the current locale first
@@ -553,7 +673,7 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
     }
     
     private func invokeFlutter( _ method: SwiftSpeechToTextCallbackMethods, arguments: Any? ) {
-        if(method != SwiftSpeechToTextCallbackMethods.soundLevelChange){
+        if method != SwiftSpeechToTextCallbackMethods.soundLevelChange || method != SwiftSpeechToTextCallbackMethods.soundChunk {
             os_log("invokeFlutter %{PUBLIC}@", log: pluginLog, type: .debug, method.rawValue )
         }
         DispatchQueue.main.async {

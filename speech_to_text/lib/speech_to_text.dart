@@ -69,6 +69,11 @@ typedef SpeechStatusListener = void Function(String status);
 /// the [SpeechToText.listen] method for use.
 typedef SpeechSoundLevelChange = Function(double level);
 
+/// Listener for raw audio chunks during a listen session.
+///
+/// See the [onSound] argument on the [SpeechToText.listen] method for use.
+typedef SpeechSoundChunkListener = void Function(Uint8List chunk);
+
 /// An interface to device specific speech recognition services.
 ///
 /// The general flow of a speech recognition session is as follows:
@@ -88,6 +93,7 @@ class SpeechToText {
   static const String notifyErrorMethod = 'notifyError';
   static const String notifyStatusMethod = 'notifyStatus';
   static const String soundLevelChangeMethod = 'soundLevelChange';
+  static const String soundChunkMethod = 'soundChunk';
   static const String listeningStatus = 'listening';
   static const String notListeningStatus = 'notListening';
   static const String doneStatus = 'done';
@@ -186,6 +192,7 @@ class SpeechToText {
   SpeechErrorListener? errorListener;
   SpeechStatusListener? statusListener;
   SpeechSoundLevelChange? _soundLevelChange;
+  SpeechSoundChunkListener? _soundChunkListener;
 
   factory SpeechToText() => _instance;
 
@@ -297,6 +304,7 @@ class SpeechToText {
     SpeechToTextPlatform.instance.onError = _onNotifyError;
     SpeechToTextPlatform.instance.onStatus = _onNotifyStatus;
     SpeechToTextPlatform.instance.onSoundLevel = _onSoundLevelChange;
+    SpeechToTextPlatform.instance.onSoundChunk = _onSoundChunk;
     _initWorked = await SpeechToTextPlatform.instance
         .initialize(debugLogging: debugLogging, options: options);
     return _initWorked;
@@ -423,6 +431,7 @@ class SpeechToText {
       Duration? pauseFor,
       String? localeId,
       SpeechSoundLevelChange? onSoundLevelChange,
+      SpeechSoundChunkListener? onSoundChunk,
       @Deprecated('Use SpeechListenOptions.cancelOnError instead')
       cancelOnError = false,
       @Deprecated('Use SpeechListenOptions.partialResults instead')
@@ -445,6 +454,7 @@ class SpeechToText {
     _notifiedDone = false;
     _resultListener = onResult;
     _soundLevelChange = onSoundLevelChange;
+    _soundChunkListener = onSoundChunk;
     _partialResults = partialResults;
     _notifyFinalTimer?.cancel();
     _notifyFinalTimer = null;
@@ -690,6 +700,15 @@ class SpeechToText {
     _lastSoundLevel = level;
     if (null != _soundLevelChange) {
       _soundLevelChange!(level);
+    }
+  }
+
+  void _onSoundChunk(Uint8List chunk) {
+    if (isNotListening) {
+      return;
+    }
+    if (null != _soundChunkListener) {
+      _soundChunkListener!(chunk);
     }
   }
 
