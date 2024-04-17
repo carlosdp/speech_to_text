@@ -443,7 +443,7 @@ public class SwiftSpeechToTextPlugin: NSObject, FlutterPlugin {
 
             let dstFormat = AVAudioFormat(
                 commonFormat: .pcmFormatInt16,
-                sampleRate: Double(sampleRate),
+                sampleRate: 16000.0,
                 channels: AVAudioChannelCount(1),
                 interleaved: true
             )
